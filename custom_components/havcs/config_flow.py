@@ -173,7 +173,7 @@ class FlowHandler(config_entries.ConfigFlow):
                 fields[vol.Required(platform+'_secret', default = user_input.get(platform+'_secret', ''))] = str
             fields[vol.Optional(CONF_ENTITY_KEY, default = user_input.get(CONF_ENTITY_KEY, ''))] = str
             fields[vol.Required(CONF_SKIP_TEST, default = user_input.get(CONF_SKIP_TEST, False))] = bool
-            fields[vol.Optional(CONF_URL, default = user_input.get(CONF_URL, 'https://[你的公网域名或IP:端口号]/havcs/auth/authorize'))] = str
+            fields[vol.Optional(CONF_URL, default = user_input.get(CONF_URL, 'https://[你的公网域名或IP:端口号]'))] = str
             fields[vol.Optional(CONF_HA_URL, default = user_input.get(CONF_HA_URL, ''))] = str
         else:
             fields[vol.Required(CONF_BROKER, default = user_input.get(CONF_BROKER, 'mqtt.ljr.im'))] = str

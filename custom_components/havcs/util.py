@@ -6,6 +6,7 @@ import re
 import jwt
 from typing import cast
 import logging
+from packaging import version
 
 _LOGGER = logging.getLogger(__name__)
 # _LOGGER.setLevel(logging.DEBUG)
@@ -93,16 +94,22 @@ def get_token_from_command(command):
     result = re.search(r'(?:accessToken|token)[\'\"\s:]+(.*?)[\'\"\s]+(,|\})', command, re.M|re.I)
     return result.group(1) if result else None
 
-async def async_update_token_expiration(access_token, hass, expiration):
+def update_token_expiration(access_token, hass, expiration):
     try:
-        unverif_claims = jwt.decode(access_token, verify=False)
-        refresh_token = await hass.auth.async_get_refresh_token(cast(str, unverif_claims.get('iss')))
+        if version.parse(jwt.__version__) < version.parse("2.0.0"):
+            unverif_claims = jwt.decode(access_token, verify=False)
+        else:
+            unverif_claims = jwt.decode(
+                access_token, algorithms=["HS256"], options={"verify_signature": False}
+            )
+        refresh_token = hass.auth.async_get_refresh_token(cast(str, unverif_claims.get('iss')))
         for user in hass.auth._store._users.values():
             if refresh_token.id in user.refresh_tokens and refresh_token.access_token_expiration != expiration:
                 _LOGGER.debug("[util] set new access token expiration for refresh_token[%s]", refresh_token.id)
                 refresh_token.access_token_expiration = expiration
                 user.refresh_tokens[refresh_token.id] = refresh_token
                 hass.auth._store._async_schedule_save()
-                break
+                return True
     except jwt.InvalidTokenError:
         _LOGGER.debug("[util] access_token[%s] is invalid, try another reauthorization on website", access_token)
+        return False

@@ -16,7 +16,9 @@ import logging
 
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.http import HomeAssistantView, StaticPathConfig
+from pathlib import Path
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.frontend import DATA_PANELS
 from .const import DATA_HAVCS_HANDLER, INTEGRATION, DATA_HAVCS_ITEMS, CONF_DEVICE_CONFIG_PATH, DATA_HAVCS_SETTINGS, CONF_SETTINGS_CONFIG_PATH, DATA_HAVCS_CONFIG, HAVCS_SERVICE_URL, CLIENT_PALTFORM_DICT, DEVICE_TYPE_DICT, DEVICE_PLATFORM_DICT, DEVICE_ATTRIBUTE_DICT, DEVICE_ACTION_DICT
 from . import util as havcs_util
@@ -47,7 +49,7 @@ class HavcsServiceView(HomeAssistantView):
             platform = havcs_util.get_platform_from_command(data)
             auth_value = havcs_util.get_token_from_command(data)
             _LOGGER.debug("[%s] get access_token >>> %s <<<", LOGGER_NAME, auth_value)
-            refresh_token = await self._hass.auth.async_validate_access_token(auth_value)
+            refresh_token = self._hass.auth.async_validate_access_token(auth_value)
             if refresh_token:
                 _LOGGER.debug("[%s] validate access_token, get refresh_token(id = %s)", LOGGER_NAME, refresh_token.id)
             else:
@@ -98,6 +100,7 @@ class HavcsAuthorizeView(HomeAssistantView):
             return web.Response(body='400 ?(￣△￣?) 参数不全拒绝访问 (?￣△￣)?', status=400)
         parts = urlparse(redirect_uri)
         if not any([client_id.startswith(platform) and parts.scheme + '://' + parts.netloc == CLIENT_PALTFORM_DICT[platform] for platform in CLIENT_PALTFORM_DICT.keys()]):
+            _LOGGER.debug(platform)
             return web.Response(body='400 ?(￣△￣?) 参数不全拒绝访问 (?￣△￣)?', status=400)
         if datetime.now() - login_attemp['last_time'] > timedelta(minutes=1):
             login_attemp['count'] = 0
@@ -106,6 +109,7 @@ class HavcsAuthorizeView(HomeAssistantView):
             return web.Response(body='403 (╯‵□′)╯︵ ┴─┴ 失败尝试次数过多暂时拉入小黑屋', status=403)
         
         client_id = parts.scheme + '://' + parts.netloc
+        _LOGGER.debug(client_id)
         data = {
             "client_id": client_id,
             "handler": ["homeassistant", None],
@@ -115,9 +119,10 @@ class HavcsAuthorizeView(HomeAssistantView):
         try:
             session = async_get_clientsession(self._hass, verify_ssl=False)
             if not self._flow_id:
-                with async_timeout.timeout(5, loop=self._hass.loop):
+                async with async_timeout.timeout(5):
                     response = await session.post(self._ha_url+'/auth/login_flow', json=data)
                 result = await response.json()
+                _LOGGER.debug(result)
                 self._flow_id = result.get('flow_id')
             if self._flow_id:
                 data = {
@@ -126,9 +131,10 @@ class HavcsAuthorizeView(HomeAssistantView):
                     'password': password
                 }
 
-                with async_timeout.timeout(5, loop=self._hass.loop):
+                async with async_timeout.timeout(5):
                     response = await session.post(self._ha_url+'/auth/login_flow/'+self._flow_id, json=data)
                 result = await response.json()
+                _LOGGER.debug(result)
                 code = result.get('result')
                 if code:
                     self._flow_id = None
@@ -141,8 +147,10 @@ class HavcsAuthorizeView(HomeAssistantView):
                         data.update({'state': state})
                     query_string = urlencode(data)
                     redirect_uri = parts.scheme + '://' + parts.netloc + parts.path +'?' + query_string + '&' + parts.query
+                    _LOGGER.debug(redirect_uri)
                     _LOGGER.debug("[%s][auth] redirect_uri = %s", LOGGER_NAME, redirect_uri)
                     return self.json({ 'code': 'ok', 'Msg': '成功授权', 'data': {'location': redirect_uri}})
+
                     # return web.Response(headers={'Location': redirect_uri+'?'+query_string}, status=303)
                 else:
                     if not login_attemp['first_time']:
@@ -211,13 +219,16 @@ class HavcsTokenView(HomeAssistantView):
                 if client_id.startswith(platform) and (not parts or parts.scheme + '://' + parts.netloc == CLIENT_PALTFORM_DICT[platform]):
                     validation = client_secret == self._hass.data[INTEGRATION][DATA_HAVCS_CONFIG].get('http', {}).get('clients', {}).get(client_id)
                     data['client_id'] = CLIENT_PALTFORM_DICT[platform]
+                    _LOGGER.debug("data_client_id")
+                    _LOGGER.debug(platform)
+                    _LOGGER.debug(data['client_id'])
         if not validation:
             _LOGGER.error("[%s][auth] Invalid client(client_id = %s, client_secret = %s): client_id or client_secret wrong", LOGGER_NAME, client_id, client_secret)
             web.Response(body='401 Σ( ° △ °|||) 验证失败拒绝访问', status=401)
         _LOGGER.debug("[%s][auth] forward request: data = %s", LOGGER_NAME, data)
         try:
             session = async_get_clientsession(self._hass, verify_ssl=False)
-            with async_timeout.timeout(5, loop=self._hass.loop):
+            async with async_timeout.timeout(5):
                 response = await session.post(self._token_url, data=data)
         except(asyncio.TimeoutError, aiohttp.ClientError):
             _LOGGER.error("[%s][auth] fail to get token, access %s in local network: timeout", LOGGER_NAME, self._token_url)
@@ -229,15 +240,16 @@ class HavcsTokenView(HomeAssistantView):
         if grant_type == 'authorization_code':
             try:
                 result = await response.json()
+                _LOGGER.debug("expiration [%s],refresh_token:[%s]",result['expires_in'],result['refresh_token'])
                 result['expires_in'] = int(self._expiration.total_seconds())
-                _LOGGER.debug("[%s][auth] get access token[%s] with default expiration, try to update expiration param and get new access token through another refresh token request.", LOGGER_NAME, result.get('access_token'))
+                _LOGGER.debug("[%s][auth] get access token[%s] with default expiration [%s], try to update expiration param and get new access token through another refresh token request.", LOGGER_NAME, result.get('access_token'),result['expires_in'])
                 access_token = result.get('access_token')
-                await havcs_util.async_update_token_expiration(access_token, self._hass, self._expiration)
+                havcs_util.update_token_expiration(access_token, self._hass, self._expiration)
 
                 try:
                     refresh_token_data = {'client_id': data.get('client_id'), 'grant_type': 'refresh_token', 'refresh_token': result.get('refresh_token')}
                     session = async_get_clientsession(self._hass, verify_ssl=False)
-                    with async_timeout.timeout(5, loop=self._hass.loop):
+                    async with async_timeout.timeout(5):
                         response = await session.post(self._token_url, data=refresh_token_data)
                 except(asyncio.TimeoutError, aiohttp.ClientError):
                     _LOGGER.error("[%s][auth] fail to get new access token, access %s in local network: timeout", LOGGER_NAME, self._token_url)
@@ -331,21 +343,23 @@ class HavcsDeviceView(HomeAssistantView):
     def __init__(self, hass, device_schema):
         self._hass = hass
         self._device_schema = device_schema
-        
-        local = hass.config.path("custom_components/" + INTEGRATION + "/html")
-        if os.path.isdir(local):
-            hass.http.register_static_path('/havcs', local, False)
-        panels = hass.data.setdefault(DATA_PANELS, {})
-        frontend_url_path = INTEGRATION+'_panel'
-        if frontend_url_path not in panels:
-            hass.components.frontend.async_register_built_in_panel(
-                component_name = "iframe",
-                sidebar_title = 'HAVCS设备',
-                sidebar_icon = 'mdi:home-edit',
-                frontend_url_path = frontend_url_path,
-                config = {"url": '/havcs/index.html'},
-                require_admin = True
-            )
+
+        # local = hass.config.path("custom_components/" + INTEGRATION + "/html")
+        # if os.path.isdir(local):
+            # hass.http.register_static_path('/havcs', local, False)
+            # #hass.http.async_register_static_paths([StaticPathConfig('/havcs', local, False)])
+        # panels = hass.data.setdefault(DATA_PANELS, {})
+        # frontend_url_path = INTEGRATION+'_panel'
+        # if frontend_url_path not in panels:
+            # hass.components.frontend.async_register_built_in_panel(
+                # component_name = "iframe",
+                # sidebar_title = 'HAVCS设备',
+                # sidebar_icon = 'mdi:home-edit',
+                # frontend_url_path = frontend_url_path,
+                # config = {"url": '/havcs/index.html'},
+                # require_admin = True
+            # )
+
 
     async def get(self, request):
         return web.Response(body='404 (￣ε￣) 访问到空气页面 (￣з￣)', status=404)
@@ -460,7 +474,7 @@ class HavcsHttpManager:
                 self._retry_remove = None
 
             session = async_get_clientsession(self._hass, verify_ssl=False)
-            with async_timeout.timeout(5, loop= self._hass.loop):
+            async with async_timeout.timeout(5):
                 response = await session.get(self._ha_url + '/havcs/auth/authorize')
             if response.status == 401:
                 _LOGGER.debug("[%s][check] aouth service is running: url = %s, status = %s", LOGGER_NAME, self._ha_url + '/havcs/auth/authorize', response.status)

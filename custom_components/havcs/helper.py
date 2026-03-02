@@ -1,4 +1,4 @@
-
+﻿
 import copy
 import voluptuous as vol
 import asyncio
@@ -6,8 +6,8 @@ import logging
 import traceback
 
 from homeassistant.exceptions import ServiceNotFound
-from homeassistant.helpers.state import AsyncTrackStates
 from homeassistant.core import HomeAssistant, Context
+from homeassistant.helpers import device_registry
 
 from .const import DATA_HAVCS_SETTINGS, INTEGRATION, DATA_HAVCS_ITEMS, ATTR_DEVICE_VISABLE, ATTR_DEVICE_ID, ATTR_DEVICE_ENTITY_ID, ATTR_DEVICE_TYPE, ATTR_DEVICE_NAME, ATTR_DEVICE_ZONE, ATTR_DEVICE_ATTRIBUTES, ATTR_DEVICE_ACTIONS, ATTR_DEVICE_PROPERTIES
 from .device import VoiceControllDevice
@@ -16,8 +16,8 @@ from .device import VoiceControllDevice
 _LOGGER = logging.getLogger(__name__)
 LOGGER_NAME = 'helper'
 
-DOMAIN_SERVICE_WITHOUT_ENTITY_ID = ['climate']
-DOMAIN_SERVICE_WITH_ENTITY_ID = ['common_timer']
+DOMAIN_SERVICE_WITHOUT_ENTITY_ID = []
+DOMAIN_SERVICE_WITH_ENTITY_ID = ['common_timer','climate']
 CONTEXT = Context()
 class VoiceControlProcessor:
     def _discovery_process_propertites(self, device_properties) -> None:
@@ -64,10 +64,9 @@ class VoiceControlProcessor:
     def process_discovery_command(self, request_from) -> tuple:
         devices = []
         entity_ids = []
-        # fix: 增加响应发现设备信息规则。自建技能或APP技能不启用则不响应对应的发现指令；自建技能与APP技能一起启用只响应APP技能的发现指令。
-        if (request_from == self._hass.data[INTEGRATION][DATA_HAVCS_SETTINGS].get('command_filter', '')):
-            _LOGGER.debug("[%s] request from %s match filter, return blank info", LOGGER_NAME, request_from)
-            return None, devices, entity_ids
+        # fix: 澧炲姞鍝嶅簲鍙戠幇璁惧淇℃伅瑙勫垯銆傝嚜寤烘妧鑳芥垨APP鎶€鑳戒笉鍚敤鍒欎笉鍝嶅簲瀵瑰簲鐨勫彂鐜版寚浠わ紱鑷缓鎶€鑳戒笌APP鎶€鑳戒竴璧峰惎鐢ㄥ彧鍝嶅簲APP鎶€鑳界殑鍙戠幇鎸囦护銆?        # if (request_from == self._hass.data[INTEGRATION][DATA_HAVCS_SETTINGS].get('command_filter', '')):
+        #     _LOGGER.debug("[%s] request from %s match filter, return blank info", LOGGER_NAME, request_from)
+        #     return None, devices, entity_ids
         for vc_device in self.vcdm.all(self._hass):
             device_id, raw_device_type, device_name, zone, device_properties, raw_actions = self.vcdm.get_device_attrs(vc_device.attributes)
             properties = self._discovery_process_propertites(device_properties)
@@ -92,7 +91,7 @@ class VoiceControlProcessor:
 
         success_task = []
 
-        # 优先使用配置的自定义action，处理逻辑：直接调用自定义service方法
+        # 浼樺厛浣跨敤閰嶇疆鐨勮嚜瀹氫箟action锛屽鐞嗛€昏緫锛氱洿鎺ヨ皟鐢ㄨ嚜瀹氫箟service鏂规硶
         ha_action = self._prase_action_p2h(action)
         if device.custom_actions.get(ha_action):
             domain_list = [cmnd[0] for cmnd in device.custom_actions[ha_action]]
@@ -109,17 +108,20 @@ class VoiceControlProcessor:
                 except (vol.Invalid, ServiceNotFound):
                     _LOGGER.error("[%s] %s : failed to call service\n%s", LOGGER_NAME, i, traceback.format_exc())
                 else:
-                    if result:
-                        _LOGGER.debug("[%s] %s : success to call service", LOGGER_NAME, i)
-                        success_task.append({i: [domain_list[i], service_list[i], data_list[i]]})
-                    else:
-                        _LOGGER.debug("[%s] %s : failed to call service", LOGGER_NAME, i)
+                    # if result is not None:
+                        # _LOGGER.debug("[%s] %s : success to call service", LOGGER_NAME, i)
+                        # success_task.append({i: [domain_list[i], service_list[i], data_list[i]]})
+                    # else:
+                        # _LOGGER.debug("[%s] %s : failed to call service", LOGGER_NAME, i)
+                    _LOGGER.debug("[%s] %s : success to call service", LOGGER_NAME, i)
+                    success_task.append({i: [domain_list[i], service_list[i], data_list[i]]})
+                        
                 changed_states = []
                 for state in self._hass.states.async_all():
                     if state.context is CONTEXT:
                         changed_states.append(state)
                 _LOGGER.debug("[%s] %s : changed_states = %s", LOGGER_NAME, i, changed_states)
-        # 自动处理action，处理逻辑：对device的所有entity，执行action对应的service方法
+        # 鑷姩澶勭悊action锛屽鐞嗛€昏緫锛氬device鐨勬墍鏈塭ntity锛屾墽琛宎ction瀵瑰簲鐨剆ervice鏂规硶
         else:
             for entity_id in entity_ids:
                 domain = entity_id[:entity_id.find('.')]
@@ -152,11 +154,14 @@ class VoiceControlProcessor:
                     except (vol.Invalid, ServiceNotFound):
                         _LOGGER.error("[%s] %s @task_%s: failed to call service\n%s", LOGGER_NAME, entity_id, i, traceback.format_exc())
                     else:
-                        if result:
-                            _LOGGER.debug("[%s] %s @task_%s: success to call service, new state = %s", LOGGER_NAME, entity_id, i, self._hass.states.get(entity_id))
-                            success_task.append({entity_id: [domain_list[i], service_list[i], data_list[i]]})
-                        else:
-                            _LOGGER.debug("[%s] %s @task_%s: failed to call service", LOGGER_NAME, entity_id, i)
+                        # if result is not None:
+                            # _LOGGER.debug("[%s] %s @task_%s: success to call service, new state = %s", LOGGER_NAME, entity_id, i, self._hass.states.get(entity_id))
+                            # success_task.append({entity_id: [domain_list[i], service_list[i], data_list[i]]})
+                        # else:
+                            # _LOGGER.debug("[%s] %s @task_%s: failed to call service", LOGGER_NAME, entity_id, i)
+                        _LOGGER.debug("[%s] %s @task_%s: success to call service, new state = %s", LOGGER_NAME, entity_id, i, self._hass.states.get(entity_id))
+                        success_task.append({entity_id: [domain_list[i], service_list[i], data_list[i]]})
+                        
                     changed_states = []
                     for state in self._hass.states.async_all():
                         if state.context is CONTEXT:
@@ -180,6 +185,7 @@ class VoiceControlProcessor:
         action = self._prase_command(command, 'action')
         device_properties = self.vcdm.get(device_id).properties
         properties = self._query_process_propertites(device_properties, action)
+        _LOGGER.debug(properties)
         return (None, properties) if properties else (self._errorResult('IOT_DEVICE_OFFLINE'), None)
 
 class VoiceControlDeviceManager:
@@ -195,9 +201,10 @@ class VoiceControlDeviceManager:
         self._device_name_constraints = device_name_constraints
         self._zone_constraints = zone_constraints
         self._devices_cache = {}
-        self._places = ["门口","客厅","卧室","客房","主卧","次卧","书房","餐厅","厨房","洗手间","浴室","阳台",\
-        "宠物房","老人房","儿童房","婴儿房","保姆房","玄关","一楼","二楼","三楼","四楼","楼梯","走廊",\
-        "过道","楼上","楼下","影音室","娱乐室","工作间","杂物间","衣帽间","吧台","花园","温室","车库","休息室","办公室","起居室"]
+        self._places = [
+            "door", "living room", "bedroom", "dining room", "kitchen", "bathroom",
+            "balcony", "garage", "study", "office", "hallway", "garden"
+        ]
 
     def all(self, hass: HomeAssistant = None, init_flag: bool = False) -> list:
         if not self._devices_cache or init_flag:
@@ -262,8 +269,8 @@ class VoiceControlDeviceManager:
 
     async def async_reregister_devices(self, hass = None):
         # entity_registry = await hass.helpers.entity_registry.async_get_registry()
-        device_registry = await hass.helpers.device_registry.async_get_registry()
-        device_registry.async_clear_config_entry(self._entry.entry_id)
+        devreg = device_registry.async_get(hass)
+        devreg.async_clear_config_entry(self._entry.entry_id)
         for device in self._devices_cache.values():
             await device.async_update_device_registry()
             # entity_ids = device.entity_id
@@ -342,7 +349,7 @@ class VoiceControlDeviceManager:
         return device_name
 
     def get_device_zone(self, hass, entity_id, raw_attributes, places = [], zone_constraints = []) ->str:
-        zone = '未指定'
+        zone = 'unassigned'
         if ATTR_DEVICE_ZONE in raw_attributes:
             zone = raw_attributes[ATTR_DEVICE_ZONE]
         else:
@@ -357,7 +364,7 @@ class VoiceControlDeviceManager:
                     if  device_name.startswith(place):
                         zone = place
                         break
-        if zone == '未指定':
+        if zone == 'unassigned':
             # Guess from HomeAssistant group which contains entity 
             for state in hass.states.async_all():
                 group_entity_id = state.entity_id
@@ -383,29 +390,58 @@ class VoiceControlDeviceManager:
             if state is None:
                 _LOGGER.debug("[%s] can not find sensor %s", LOGGER_NAME, entity_id)
                 return []
-            unit = state.attributes.get('unit_of_measurement', '')
-            friendly_name = state.attributes.get('friendly_name', '')
-            if unit == u'°C' or unit == u'℃' or 'temperature' in entity_id or '温度' in friendly_name :
+            unit = str(state.attributes.get('unit_of_measurement', '')).strip().lower().replace(' ', '')
+            friendly_name = str(state.attributes.get('friendly_name', '')).lower()
+            device_class = str(state.attributes.get('device_class', '')).lower()
+            entity_id_l = entity_id.lower()
+            if (
+                device_class == 'temperature'
+                or unit in {'掳c', '鈩?', '°c', '℃', '°f', '℉'}
+                or 'temperature' in entity_id_l
+                or 'temperature' in friendly_name
+                or '娓╁害' in friendly_name
+            ):
                 attribute = 'temperature'
-            elif unit == 'lx' or unit == 'lm' or 'illumination' in entity_id or '光照' in friendly_name:
+            elif (
+                device_class == 'illuminance'
+                or unit in {'lx', 'lm'}
+                or 'illumination' in entity_id_l
+                or 'illuminance' in entity_id_l
+                or '鍏夌収' in friendly_name
+            ):
                 attribute = 'illumination'
-            elif 'humidity' in entity_id or  '湿度' in friendly_name:
+            elif (
+                device_class == 'humidity'
+                or unit == '%'
+                or 'humidity' in entity_id_l
+                or 'humidity' in friendly_name
+                or '婀垮害' in friendly_name
+            ):
                 attribute = 'humidity'
-            elif 'pm25' in entity_id or 'pm2.5' in friendly_name:
+            elif 'pm25' in entity_id_l or 'pm2.5' in friendly_name:
                 attribute = 'pm25'
-            elif 'co2' in entity_id or '二氧化碳' in friendly_name:
+            elif 'pm10' in entity_id_l or 'pm10' in friendly_name:
+                attribute = 'pm10'
+            elif 'co2' in entity_id_l or 'co2' in friendly_name or '浜屾哀鍖栫⒊' in friendly_name:
                 attribute = 'co2'
+            elif 'hcho' in entity_id_l or 'hcho' in friendly_name or '鐢查啗' in friendly_name:
+                attribute = 'hcho'
             else:
                 attribute = None
                 _LOGGER.debug("[%s] unsupport sensor %s", LOGGER_NAME, entity_id)
             if not attributes_constrains or attribute in attributes_constrains:
                 properties = [{'entity_id': entity_id, 'attribute': attribute}]
-        elif entity_id.startswith('fan.') or entity_id.startswith('climate.'):
-            properties = [{'entity_id': entity_id, 'attribute': 'power_state'}, {'entity_id': entity_id, 'attribute': 'mode'}]
+        elif entity_id.startswith('fan.'):
+            properties = [{'entity_id': entity_id, 'attribute': 'turnonstate'}, {'entity_id': entity_id, 'attribute': 'fanspeed'}, {'entity_id': entity_id, 'attribute': 'mode'}]
+        elif entity_id.startswith('climate.'):
+            properties = [{'entity_id': entity_id, 'attribute': 'turnonstate'}, {'entity_id': entity_id, 'attribute': 'hvac_mode'}, {'entity_id': entity_id, 'attribute': 'targettemperature'}, {'entity_id': entity_id, 'attribute': 'temperature'}, {'entity_id': entity_id, 'attribute': 'fan_mode'}]
+        elif entity_id.startswith('humidifier.'):
+            properties = [{'entity_id': entity_id, 'attribute': 'turnonstate'}, {'entity_id': entity_id, 'attribute': 'targethumidity'}, {'entity_id': entity_id, 'attribute': 'humidity'}]
+        elif entity_id.startswith('vacuum.'):
+            properties = [{'entity_id': entity_id, 'attribute': 'turnonstate'}, {'entity_id': entity_id, 'attribute': 'state'}]
         else:
-            properties = [{'entity_id': entity_id, 'attribute': 'power_state'}]
-        return properties
-    
+            properties = [{'entity_id': entity_id, 'attribute': 'turnonstate'}]
+        return properties    
     def get_property_related_entity_id(self, attribute, properties):
         for device_property in properties:
             if attribute == device_property.get('attribute'):
@@ -417,9 +453,9 @@ class VoiceControlDeviceManager:
             if '%' in formatted_property[key]:
                 attribute = formatted_property[key][1:]
                 entity_id = self.get_property_related_entity_id(attribute, device_properties)
-                formatted_property[key] = hass.states.get(entity_id).state
+                state = hass.states.get(entity_id) if entity_id else None
+                formatted_property[key] = state.state if state else None
         return formatted_property
-
     def get_device_actions(self, hass, entity_id, raw_attributes, device_type) -> list:
         if ATTR_DEVICE_ACTIONS in raw_attributes and raw_attributes[ATTR_DEVICE_ACTIONS]:
             # actions = [HAVCS_ACTIONS_ALIAS[DOMAIN].get(action) for action in raw_attributes[ATTR_DEVICE_ACTIONS].keys() if HAVCS_ACTIONS_ALIAS[DOMAIN].get(action)]
@@ -429,29 +465,49 @@ class VoiceControlDeviceManager:
             elif isinstance(actions, dict):
                 actions = actions.keys()
         elif device_type == 'switch':
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate"]
         elif device_type == 'light':
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "set_brightness", "increase_brightness", "decrease_brightness", "set_color"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_brightness", "increase_brightness", "decrease_brightness", "set_color", "set_colortemperature", "increment_colortemperature", "decrement_colortemperature"]
+        elif device_type == 'climate':
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_temperature", "increase_temperature", "decrease_temperature", "query_targettemperature", "query_temperature", "set_hvac_mode", "set_percentage", "increase_speed", "decrease_speed"]
         elif device_type == 'cover':
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "pause"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "pause"]
+        elif device_type == 'media_player':
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "media_pause", "media_play", "volume_up", "volume_down", "volume_set", "volume_mute", "tv_up", "tv_down"]
+        elif device_type == 'humidifier':
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_humidity", "query_humidity", "query_targethumidity"]
         elif device_type == 'vacuum':
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate"]
+        elif device_type == 'fan':
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_percentage", "increase_speed", "decrease_speed", "set_oscillate","unset_oscillate"]
         elif device_type == 'sensor':
             actions = self.get_sensor_actions_from_properties(self.get_device_properties(hass, entity_id, raw_attributes))  
         elif entity_id.startswith('switch.'):
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate"]
         elif entity_id.startswith('light.'):
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "set_brightness", "increase_brightness", "decrease_brightness", "set_color"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_brightness", "increase_brightness", "decrease_brightness", "set_color", "set_colortemperature", "increment_colortemperature", "decrement_colortemperature"]
+        elif entity_id.startswith('climate.'):
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_temperature", "increase_temperature", "decrease_temperature", "query_targettemperature", "query_temperature", "set_hvac_mode", "set_percentage", "increase_speed", "decrease_speed"]
         elif entity_id.startswith('cover.'):
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "pause"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "pause"]
+        elif entity_id.startswith('media_player.'):
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "media_pause", "media_play", "volume_up", "volume_down", "volume_set", "volume_mute", "tv_up", "tv_down"]
+        elif entity_id.startswith('humidifier'):
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_humidity", "query_humidity", "query_targethumidity"]
         elif entity_id.startswith('vacuum.'):
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate"]
+        elif entity_id.startswith('fan.'):
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_percentage", "increase_speed", "decrease_speed", "set_oscillate","unset_oscillate"]
         elif entity_id.startswith('sensor.'):
-            actions = self.get_sensor_actions_from_properties(self.get_device_properties(hass, entity_id, raw_attributes))  
+            actions = self.get_sensor_actions_from_properties(self.get_device_properties(hass, entity_id, raw_attributes))
         else:
-            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off"]
+            actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate"]
         return actions
     
     def get_sensor_actions_from_properties(self, properties) -> list:
         return [ 'query_' + device_property.get('attribute') for device_property in properties]
     
+
+
+
+

@@ -22,21 +22,24 @@ import logging
 import traceback
 
 from homeassistant import config_entries
-from homeassistant.core import Event, Context, callback
+from homeassistant.core import Event, Context, callback, HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.components import mqtt
-from homeassistant.helpers.typing import HomeAssistantType, ConfigType
+from homeassistant.helpers.typing import ConfigType
 from homeassistant.const import (CONF_PORT, CONF_PROTOCOL, EVENT_HOMEASSISTANT_START, EVENT_HOMEASSISTANT_STOP, EVENT_STATE_CHANGED, ATTR_ENTITY_ID)
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import get_url
 from homeassistant import config as conf_util
+from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.frontend import DATA_PANELS
+from homeassistant.components import frontend
 
 
 from . import util as havcs_util
 from .bind import HavcsBindManager
 from .http import HavcsHttpManager
-from .const import CONF_SETTINGS_CONFIG_PATH, CONF_DEVICE_CONFIG_PATH, DEVICE_ATTRIBUTE_DICT, DATA_HAVCS_HANDLER, DATA_HAVCS_CONFIG, DATA_HAVCS_MQTT, DATA_HAVCS_BIND_MANAGER, DATA_HAVCS_HTTP_MANAGER, DATA_HAVCS_SETTINGS, DATA_HAVCS_ITEMS, DEVICE_PLATFORM_DICT, HAVCS_SERVICE_URL, ATTR_DEVICE_VISABLE, ATTR_DEVICE_ENTITY_ID, ATTR_DEVICE_TYPE, ATTR_DEVICE_NAME, ATTR_DEVICE_ZONE, ATTR_DEVICE_ICON, ATTR_DEVICE_ATTRIBUTES, ATTR_DEVICE_ACTIONS, DEVICE_TYPE_DICT, DEVICE_ATTRIBUTE_DICT, DEVICE_ACTION_DICT, DEVICE_PLATFORM_DICT
+from .const import INTEGRATION, CONF_SETTINGS_CONFIG_PATH, CONF_DEVICE_CONFIG_PATH, DEVICE_ATTRIBUTE_DICT, DATA_HAVCS_HANDLER, DATA_HAVCS_CONFIG, DATA_HAVCS_MQTT, DATA_HAVCS_BIND_MANAGER, DATA_HAVCS_HTTP_MANAGER, DATA_HAVCS_SETTINGS, DATA_HAVCS_ITEMS, DEVICE_PLATFORM_DICT, HAVCS_SERVICE_URL, ATTR_DEVICE_VISABLE, ATTR_DEVICE_ENTITY_ID, ATTR_DEVICE_TYPE, ATTR_DEVICE_NAME, ATTR_DEVICE_ZONE, ATTR_DEVICE_ICON, ATTR_DEVICE_ATTRIBUTES, ATTR_DEVICE_ACTIONS, DEVICE_TYPE_DICT, DEVICE_ATTRIBUTE_DICT, DEVICE_ACTION_DICT, DEVICE_PLATFORM_DICT
 
 _LOGGER = logging.getLogger(__name__)
 # _LOGGER.setLevel(logging.DEBUG)
@@ -106,9 +109,12 @@ SETTING_SCHEMA = vol.Schema({
     vol.Optional(CONF_PROTOCOL, default=DEFAULT_PROTOCOL): vol.All(cv.string, vol.In([PROTOCOL_31, PROTOCOL_311])),
 })
 
+
+
 def check_client_id(value):
     """Validate an client_id."""
     for platform in DEVICE_PLATFORM_DICT.keys():
+        _LOGGER.debug(platform)
         if value.startswith(platform):
             return value
     raise vol.Invalid('Invalid client_id, starts with platform name')
@@ -178,7 +184,7 @@ SETTINGS_CONFIG_SCHEMA = vol.Schema({
     vol.Optional(ATTR_CONFIG_COMMAND_FILTER, default='none'): vol.Any('http', 'mqtt', 'none')
 },extra=vol.PREVENT_EXTRA)
 
-async def async_setup(hass: HomeAssistantType, config: ConfigType) -> bool:
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
     conf = config.get(DOMAIN)  # type: ConfigType
@@ -206,7 +212,27 @@ async def async_setup_entry(hass, config_entry):
     hass.data[DOMAIN].setdefault(DATA_HAVCS_ITEMS, {})
     hass.data[DOMAIN].setdefault(DATA_HAVCS_SETTINGS, {})
     conf = hass.data[DOMAIN].get(DATA_HAVCS_CONFIG)
-
+    
+    _LOGGER.debug(conf)
+    
+    _LOGGER.debug(config_entry.source)
+    
+    local = hass.config.path("custom_components/" + INTEGRATION + "/html")
+    if os.path.isdir(local):
+        await hass.http.async_register_static_paths([StaticPathConfig('/havcs', local, False)])
+    panels = hass.data.setdefault(DATA_PANELS, {})
+    frontend_url_path = INTEGRATION+'_panel'
+    if frontend_url_path not in panels:
+        frontend.async_register_built_in_panel(
+            hass,
+            component_name = "iframe",
+            sidebar_title = 'HAVCS设备',
+            sidebar_icon = 'mdi:home-edit',
+            frontend_url_path = frontend_url_path,
+            config = {"url": '/havcs/index.html'},
+            require_admin = True
+        )
+    
     # Config entry was created because user had configuration.yaml entry
     # They removed that, so remove entry.
     if config_entry.source == config_entries.SOURCE_IMPORT:
@@ -379,7 +405,7 @@ async def async_setup_entry(hass, config_entry):
             try:
                 ca_url = 'https://raw.githubusercontent.com/cnk700i/havcs/master/custom_components/havcs/ca.crt'
                 session = async_get_clientsession(hass, verify_ssl=False)
-                with async_timeout.timeout(5, loop=hass.loop):
+                async with async_timeout.timeout(5):
                     response = await session.get(ca_url)
                 ca_bytes = await response.read()
                 md5_l = hashlib.md5()
@@ -414,7 +440,7 @@ async def async_setup_entry(hass, config_entry):
 
                 try:
                     session = async_get_clientsession(hass, verify_ssl=False)
-                    with async_timeout.timeout(5, loop=hass.loop):
+                    async with async_timeout.timeout(5):
                         response = await session.post(url, data=mqtt_msg['content'], headers = mqtt_msg.get('headers'))
                 except(asyncio.TimeoutError, aiohttp.ClientError):
                     _LOGGER.error("[http_proxy] fail to access %s in local network: timeout", url)
@@ -424,7 +450,7 @@ async def async_setup_entry(hass, config_entry):
                 _LOGGER.debug("[http_proxy] use GET method")
                 try:
                     session = async_get_clientsession(hass, verify_ssl=False)
-                    with async_timeout.timeout(5, loop=hass.loop):
+                    async with async_timeout.timeout(5):
                         response = await session.get(url, headers = mqtt_msg.get('headers'))
                 except(asyncio.TimeoutError, aiohttp.ClientError):
                     _LOGGER.error("[http_proxy] fail to access %s in local network: timeout", url)
@@ -591,6 +617,9 @@ async def async_setup_entry(hass, config_entry):
                 _LOGGER.error("Error loading %s: %s", havc_device_config_path, traceback.format_exc())
                 return None
 
+        def sync_import_module(domain, platform):
+            return importlib.import_module('custom_components.{}.{}'.format(domain, platform))
+                
         async def async_init_sub_entry():
             # create when config change
             mode = []
@@ -619,19 +648,20 @@ async def async_setup_entry(hass, config_entry):
                 if entry.data.get('platform') in remove_platforms:
                     await hass.async_create_task(hass.config_entries.async_remove(entry.entry_id))
                 else:
-                    entry.title=f"接入平台[{entry.data.get('platform')}-{DEVICE_PLATFORM_DICT[entry.data.get('platform')]['cn_name']}]，接入方式{mode}"
-                    hass.config_entries.async_update_entry(entry)
+                    hass.config_entries.async_update_entry(entry, title=f"接入平台[{entry.data.get('platform')}-{DEVICE_PLATFORM_DICT[entry.data.get('platform')]['cn_name']}]，接入方式{mode}")
 
             # await async_load_device_info()
+            
+            loop = asyncio.get_event_loop()
 
             for platform in platforms:
                 for ent in hass.config_entries.async_entries(DOMAIN):
                     if ent.source == SOURCE_PLATFORM and ent.data.get('platform') == platform:
                         try:
-                            module = importlib.import_module('custom_components.{}.{}'.format(DOMAIN,platform))
+                            module = await loop.run_in_executor(None, sync_import_module, DOMAIN, platform)
                             _LOGGER.info("[post-task] import %s.%s", DOMAIN, platform)
                             hass.data[DOMAIN][DATA_HAVCS_HANDLER][platform] = await module.createHandler(hass, ent)
-                            # hass.data[DOMAIN][DATA_HAVCS_HANDLER][platform].vcdm.all(hass, True)
+
                         except ImportError as err:
                             _LOGGER.error("[post-task] Unable to import %s.%s, %s", DOMAIN, platform, err)
                             return False

@@ -23,4 +23,23 @@
 - 这个兼容逻辑目前只对 `dueros` 生效，没有扩展到天猫精灵、京东小鲸等其它平台，目的是把风险控制在最小范围。
 - 更安全的长期方案仍然是让小度平台在重新授权后真正切换到新的 `access_token`，然后删除这里的兼容回退逻辑。
 
+## 2026-03-22 小度平台配置
+本人修改后的代码，需要修改小度技能平台的配置，具体改动，对比原作者版本的配置，变化如下：
+```text
+原作者代码对应的小度技能平台配置：
+- 授权地址 : https://域名:端口/auth/authorize
+- Client_Id : https://xiaodu.baidu.com
+- Token地址 : https://域名:端口/havcs/auth/token
+- ClientSecret : 参考原作者的文档
+- WebService : https://域名:端口/havcs/service
+```
+更新为本代码后,小度技能平台的配置修改如下：
+```text
+适配当前代码的小度技能平台配置：
+- 授权地址(有变化) : https://域名:端口/auth/authorize
+- Client_Id(有变化) : dueros
+- Token地址(不变) : https://域名:端口/havcs/auth/token
+- ClientSecret(不变) : 参考原作者的文档
+- WebService(不变) : https://域名:端口/havcs/service
+```
 

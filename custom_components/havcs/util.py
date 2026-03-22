@@ -94,22 +94,67 @@ def get_token_from_command(command):
     result = re.search(r'(?:accessToken|token)[\'\"\s:]+(.*?)[\'\"\s]+(,|\})', command, re.M|re.I)
     return result.group(1) if result else None
 
-def update_token_expiration(access_token, hass, expiration):
+def get_refresh_token_from_access_token(access_token, hass):
     try:
+        if not access_token:
+            return None
         if version.parse(jwt.__version__) < version.parse("2.0.0"):
             unverif_claims = jwt.decode(access_token, verify=False)
         else:
             unverif_claims = jwt.decode(
                 access_token, algorithms=["HS256"], options={"verify_signature": False}
             )
-        refresh_token = hass.auth.async_get_refresh_token(cast(str, unverif_claims.get('iss')))
-        for user in hass.auth._store._users.values():
-            if refresh_token.id in user.refresh_tokens and refresh_token.access_token_expiration != expiration:
-                _LOGGER.debug("[util] set new access token expiration for refresh_token[%s]", refresh_token.id)
-                refresh_token.access_token_expiration = expiration
-                user.refresh_tokens[refresh_token.id] = refresh_token
-                hass.auth._store._async_schedule_save()
-                return True
+        return hass.auth.async_get_refresh_token(cast(str, unverif_claims.get('iss')))
+    except jwt.InvalidTokenError:
+        _LOGGER.debug("[util] access_token[%s] is invalid, try another reauthorization on website", access_token)
+        return None
+
+def get_latest_refresh_token_by_client_id_fragment(client_id_fragment, hass):
+    try:
+        if not client_id_fragment:
+            return None
+
+        store = getattr(hass.auth, "_store", None)
+        users = getattr(store, "_users", None)
+        if not users:
+            return None
+
+        latest = None
+        latest_created_at = ""
+        for user in users.values():
+            for refresh_token in getattr(user, "refresh_tokens", {}).values():
+                client_id = getattr(refresh_token, "client_id", None) or ""
+                created_at = str(getattr(refresh_token, "created_at", "") or "")
+                if client_id_fragment not in client_id:
+                    continue
+                if created_at >= latest_created_at:
+                    latest = refresh_token
+                    latest_created_at = created_at
+        return latest
+    except Exception:
+        _LOGGER.exception("[util] failed to get latest refresh token by client_id fragment")
+        return None
+
+def update_token_expiration(access_token, hass, expiration):
+    try:
+        refresh_token = get_refresh_token_from_access_token(access_token, hass)
+        if not refresh_token:
+            return False
+
+        if refresh_token.access_token_expiration == expiration:
+            return True
+
+        _LOGGER.debug("[util] set new access token expiration for refresh_token[%s]", refresh_token.id)
+        refresh_token.access_token_expiration = expiration
+
+        user = getattr(refresh_token, "user", None)
+        if user and refresh_token.id in getattr(user, "refresh_tokens", {}):
+            user.refresh_tokens[refresh_token.id] = refresh_token
+
+        store = getattr(hass.auth, "_store", None)
+        if store and hasattr(store, "_async_schedule_save"):
+            store._async_schedule_save()
+        return True
     except jwt.InvalidTokenError:
         _LOGGER.debug("[util] access_token[%s] is invalid, try another reauthorization on website", access_token)
         return False

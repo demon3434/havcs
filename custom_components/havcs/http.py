@@ -28,6 +28,47 @@ from multidict import MultiDict
 _LOGGER = logging.getLogger(__name__)
 LOGGER_NAME = 'http'
 
+_PLATFORM_REDIRECT_ORIGINS = {
+    'dueros': {'https://xiaodu.baidu.com', 'https://xiaodu-dbp.baidu.com'},
+    'dueros-test': {'https://xiaodu.baidu.com', 'https://xiaodu-dbp.baidu.com'},
+}
+
+
+def _get_http_clients(hass):
+    """Return configured HTTP OAuth clients for both YAML and config-entry modes."""
+    conf = hass.data.get(INTEGRATION, {}).get(DATA_HAVCS_CONFIG, {}) or {}
+    clients = conf.get('http', {}).get('clients', {})
+    if clients:
+        clients = dict(clients)
+        if clients.get('dueros') and not clients.get('dueros-test'):
+            clients['dueros-test'] = clients['dueros']
+        return clients
+
+    for entry in hass.config_entries.async_entries(INTEGRATION):
+        if entry.source != 'user':
+            continue
+        entry_clients = entry.data.get('http', {}).get('clients', {})
+        if entry_clients:
+            entry_clients = dict(entry_clients)
+            if entry_clients.get('dueros') and not entry_clients.get('dueros-test'):
+                entry_clients['dueros-test'] = entry_clients['dueros']
+            return entry_clients
+
+    return {}
+
+
+def _get_allowed_redirect_origins(platform):
+    return _PLATFORM_REDIRECT_ORIGINS.get(platform, {CLIENT_PALTFORM_DICT[platform]})
+
+
+def _get_redirect_origin(redirect_uri):
+    if not redirect_uri:
+        return None
+    parts = urlparse(redirect_uri)
+    if not parts.scheme or not parts.netloc:
+        return None
+    return parts.scheme + '://' + parts.netloc
+
 class HavcsServiceView(HomeAssistantView):
     """View to handle Configuration requests."""
 
@@ -54,6 +95,14 @@ class HavcsServiceView(HomeAssistantView):
                 _LOGGER.debug("[%s] validate access_token, get refresh_token(id = %s)", LOGGER_NAME, refresh_token.id)
             else:
                 _LOGGER.debug("[%s] validate access_token, get None", LOGGER_NAME)
+                if platform == 'dueros':
+                    refresh_token = havcs_util.get_refresh_token_from_access_token(auth_value, self._hass)
+                    if refresh_token:
+                        _LOGGER.debug("[%s] fallback refresh_token lookup succeeded(id = %s)", LOGGER_NAME, refresh_token.id)
+                    else:
+                        refresh_token = havcs_util.get_latest_refresh_token_by_client_id_fragment('xiaodu', self._hass)
+                        if refresh_token:
+                            _LOGGER.debug("[%s] fallback latest xiaodu refresh_token succeeded(id = %s)", LOGGER_NAME, refresh_token.id)
                 _LOGGER.debug("[%s] !!! token校验失败，请检查授权 !!!", LOGGER_NAME)
             response = await self._hass.data[INTEGRATION][DATA_HAVCS_HANDLER][platform].handleRequest(json.loads(data), refresh_token)
         except:
@@ -73,7 +122,6 @@ class HavcsAuthorizeView(HomeAssistantView):
         self._hass = hass
         self._ha_url = ha_url
         self._authorize_url = ha_url + self.url
-        self._flow_id = None
         self._login_attempts = {}
 
     async def head(self, request):
@@ -81,7 +129,7 @@ class HavcsAuthorizeView(HomeAssistantView):
 
     async def get(self, request):
         client_id = request.query.get('client_id')
-        if client_id in self._hass.data[INTEGRATION][DATA_HAVCS_CONFIG].get('http', {}).get('clients', {}).keys():
+        if client_id and client_id in _get_http_clients(self._hass):
             with open(self._hass.config.path("custom_components/" + INTEGRATION + "/html/login.html"), mode="r", encoding='UTF-8') as f:
                 body = f.read()
             return web.Response(body=body, content_type='text/html')
@@ -99,8 +147,17 @@ class HavcsAuthorizeView(HomeAssistantView):
         if not all((client_id, redirect_uri, username, password)):
             return web.Response(body='400 ?(￣△￣?) 参数不全拒绝访问 (?￣△￣)?', status=400)
         parts = urlparse(redirect_uri)
-        if not any([client_id.startswith(platform) and parts.scheme + '://' + parts.netloc == CLIENT_PALTFORM_DICT[platform] for platform in CLIENT_PALTFORM_DICT.keys()]):
-            _LOGGER.debug(platform)
+        redirect_origin = _get_redirect_origin(redirect_uri)
+        platform = next(
+            (
+                platform_name
+                for platform_name in CLIENT_PALTFORM_DICT.keys()
+                if client_id.startswith(platform_name) and redirect_origin in _get_allowed_redirect_origins(platform_name)
+            ),
+            None,
+        )
+        if not platform:
+            _LOGGER.error("[%s][auth] Invalid redirect(client_id = %s, redirect_uri = %s)", LOGGER_NAME, client_id, redirect_uri)
             return web.Response(body='400 ?(￣△￣?) 参数不全拒绝访问 (?￣△￣)?', status=400)
         if datetime.now() - login_attemp['last_time'] > timedelta(minutes=1):
             login_attemp['count'] = 0
@@ -108,7 +165,7 @@ class HavcsAuthorizeView(HomeAssistantView):
             _LOGGER.info("[%s][auth]Too many login attempts Login attempt with invalid authentication", LOGGER_NAME)
             return web.Response(body='403 (╯‵□′)╯︵ ┴─┴ 失败尝试次数过多暂时拉入小黑屋', status=403)
         
-        client_id = parts.scheme + '://' + parts.netloc
+        client_id = redirect_origin
         _LOGGER.debug(client_id)
         data = {
             "client_id": client_id,
@@ -118,13 +175,12 @@ class HavcsAuthorizeView(HomeAssistantView):
         }
         try:
             session = async_get_clientsession(self._hass, verify_ssl=False)
-            if not self._flow_id:
-                async with async_timeout.timeout(5):
-                    response = await session.post(self._ha_url+'/auth/login_flow', json=data)
-                result = await response.json()
-                _LOGGER.debug(result)
-                self._flow_id = result.get('flow_id')
-            if self._flow_id:
+            async with async_timeout.timeout(5):
+                response = await session.post(self._ha_url+'/auth/login_flow', json=data)
+            result = await response.json()
+            _LOGGER.debug(result)
+            flow_id = result.get('flow_id')
+            if flow_id:
                 data = {
                     "client_id": client_id,
                     'username': username,
@@ -132,12 +188,11 @@ class HavcsAuthorizeView(HomeAssistantView):
                 }
 
                 async with async_timeout.timeout(5):
-                    response = await session.post(self._ha_url+'/auth/login_flow/'+self._flow_id, json=data)
+                    response = await session.post(self._ha_url+'/auth/login_flow/'+flow_id, json=data)
                 result = await response.json()
                 _LOGGER.debug(result)
                 code = result.get('result')
                 if code:
-                    self._flow_id = None
                     login_attemp['count'] = 0
                     login_attemp['first_time'] = None
                     data = {
@@ -152,13 +207,10 @@ class HavcsAuthorizeView(HomeAssistantView):
                     return self.json({ 'code': 'ok', 'Msg': '成功授权', 'data': {'location': redirect_uri}})
 
                     # return web.Response(headers={'Location': redirect_uri+'?'+query_string}, status=303)
-                else:
-                    if not login_attemp['first_time']:
-                        login_attemp['first_time'] = datetime.now()
-                    login_attemp['count'] += 1
-                    login_attemp['last_time'] = datetime.now()
-                    # location = request.headers.get('Referer')
-                    # return web.Response(headers={'Location': location}, status=303)
+            if not login_attemp['first_time']:
+                login_attemp['first_time'] = datetime.now()
+            login_attemp['count'] += 1
+            login_attemp['last_time'] = datetime.now()
             return self.json({ 'code': 'error', 'Msg': 'HA用户密码错误/服务异常'})
         except(asyncio.TimeoutError, aiohttp.ClientError) as e:
             _LOGGER.error("[%s][auth] timeout", LOGGER_NAME)
@@ -189,6 +241,7 @@ class HavcsTokenView(HomeAssistantView):
         _LOGGER.debug("[%s][auth] request headers : %s", LOGGER_NAME, headers)
         body_data = await request.text()
         _LOGGER.debug("[%s][auth] request data : %s", LOGGER_NAME, body_data)
+        clients = _get_http_clients(self._hass)
         try:
             data = json.loads(body_data)
         except json.decoder.JSONDecodeError:
@@ -206,24 +259,28 @@ class HavcsTokenView(HomeAssistantView):
         client_secret = data.get('client_secret')
         if not all((grant_type, client_id, client_secret)):
             _LOGGER.error("[%s][auth] Invalid request: data = %s", LOGGER_NAME, data)
+            return web.Response(status=400)
             web.Response(body='400 ?(￣△￣?) 参数不全拒绝访问 (?￣△￣)?', status=400)
         validation = False
         if redirect_uri:
             parts = urlparse(redirect_uri)
+            redirect_origin = _get_redirect_origin(redirect_uri)
         else:
             parts = None
+            redirect_origin = None
         if client_id.startswith('https://'):
             validation = True
         else:
             for platform in CLIENT_PALTFORM_DICT.keys():
-                if client_id.startswith(platform) and (not parts or parts.scheme + '://' + parts.netloc == CLIENT_PALTFORM_DICT[platform]):
-                    validation = client_secret == self._hass.data[INTEGRATION][DATA_HAVCS_CONFIG].get('http', {}).get('clients', {}).get(client_id)
-                    data['client_id'] = CLIENT_PALTFORM_DICT[platform]
+                if client_id.startswith(platform) and (not redirect_origin or redirect_origin in _get_allowed_redirect_origins(platform)):
+                    validation = client_secret == clients.get(client_id)
+                    data['client_id'] = redirect_origin or CLIENT_PALTFORM_DICT[platform]
                     _LOGGER.debug("data_client_id")
                     _LOGGER.debug(platform)
                     _LOGGER.debug(data['client_id'])
         if not validation:
             _LOGGER.error("[%s][auth] Invalid client(client_id = %s, client_secret = %s): client_id or client_secret wrong", LOGGER_NAME, client_id, client_secret)
+            return web.Response(status=401)
             web.Response(body='401 Σ( ° △ °|||) 验证失败拒绝访问', status=401)
         _LOGGER.debug("[%s][auth] forward request: data = %s", LOGGER_NAME, data)
         try:

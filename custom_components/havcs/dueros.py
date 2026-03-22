@@ -34,7 +34,7 @@ class PlatformParameter:
         'percentage': 'fanspeed',
         'state': 'state',
     }
-    
+
     device_action_map_h2p ={
         'turn_on': 'turnOn',   #鎵撳紑
         'turn_off': 'turnOff', #鍏抽棴
@@ -47,9 +47,9 @@ class PlatformParameter:
         'increase_temperature': 'incrementTemperature',         #鍗囬珮娓╁害
         'decrease_temperature': 'decrementTemperature',         #闄嶄綆娓╁害
         'set_temperature': 'setTemperature',                    #璁剧疆娓╁害
-        'increase_speed': 'incrementFanSpeed',                  #澧炲姞椋庨€?        'decrease_speed': 'decrementFanSpeed',                  #鍑忓皬椋庨€?        'set_percentage': 'setFanSpeed',                        #璁剧疆椋庨€?       
-        'pause': 'pause',                                       #鏆傚仠        
-        'set_humidity': 'setHumidity',                          #璁剧疆婀垮害妯″紡       
+        'increase_speed': 'incrementFanSpeed',                  #澧炲姞椋庨€?        'decrease_speed': 'decrementFanSpeed',                  #鍑忓皬椋庨€?        'set_percentage': 'setFanSpeed',                        #璁剧疆椋庨€?
+        'pause': 'pause',                                       #鏆傚仠
+        'set_humidity': 'setHumidity',                          #璁剧疆婀垮害妯″紡
         'set_hvac_mode': 'setMode',                             #璁剧疆妯″紡
         'set_oscillate': 'setMode',                         #璁剧疆妯″紡
         'unset_oscillate': 'unSetMode',                     #鍙栨秷璁剧疆鐨勬ā寮?        'volume_up': 'incrementVolume',                     #璋冮珮闊抽噺
@@ -60,7 +60,7 @@ class PlatformParameter:
         'query_temperature': 'getTemperatureReading',           #鏌ヨ褰撳墠娓╁害
         'query_humidity': 'getHumidity',                        #鏌ヨ婀垮害
         'query_targettemperature': 'getTargetTemperature',     #鏌ヨ鐩爣娓╁害
-        'query_targethumidity': 'getTargetHumidity',           #鏌ヨ鐩爣婀垮害 
+        'query_targethumidity': 'getTargetHumidity',           #鏌ヨ鐩爣婀垮害
         'query_state': 'getState',                #鏌ヨ璁惧鎵€鏈夌姸鎬?        'query_pm25': 'getAirPM25',                    #鏌ヨPM2.5
         'query_pm10': 'getAirPM10',          #鏌ヨPM10
         'query_co2': 'getCO2Quantity',          #鏌ヨ浜屾哀鍖栫⒊鍚噺
@@ -85,7 +85,7 @@ class PlatformParameter:
         # ' ': 'setComplexActions' ,  #鎵ц鑷畾涔夊鏉傚姩浣?        # ' ': 'setDirection' ,  #璁剧疆绉诲姩鏂瑰悜
         # ' ': 'submitPrint' ,  #鎵撳嵃
         # 'increment_humidity': 'incrementHumidity',              #澧炲ぇ婀垮害
-        # 'decrement_humidity': 'decrementHumidity',              #闄嶄綆婀垮害 
+        # 'decrement_humidity': 'decrementHumidity',              #闄嶄綆婀垮害
         # ' ': 'getWaterQuality' ,  #鏌ヨ姘磋川
         # ' ': 'getTimeLeft' ,  #鏌ヨ鍓╀綑鏃堕棿
         # ' ': 'getRunningStatus' ,  #鏌ヨ杩愯鐘舵€?        # ' ': 'getRunningTime' ,  #鏌ヨ杩愯鏃堕棿
@@ -125,6 +125,7 @@ class PlatformParameter:
         "DEHUMIDIFIER": "dehumidifier",
         "INDUCTION_COOKER": "induction cooker",
         "AIR_PURIFIER": "air purifier",
+        "AIR_MONITOR": "air monitor",
         "WASHING_MACHINE": "washing machine",
         "WATER_HEATER": "water heater",
         "GAS_STOVE": "gas stove",
@@ -182,7 +183,7 @@ class PlatformParameter:
         'light': 'LIGHT',
         'media_player': 'TV_SET',
         'switch': 'SWITCH',
-        'sensor': 'SENSOR',
+        'sensor': 'AIR_MONITOR',
         'cover': 'CURTAIN',
         'vacuum': 'SWEEPING_ROBOT',
         'humidifier': 'DEHUMIDIFIER',
@@ -206,13 +207,13 @@ class PlatformParameter:
             'IncrementTemperatureRequest': lambda state, attributes, payload: (['climate'], ['set_temperature'],[ {'temperature': min(state.attributes['temperature'] + payload['deltaValue']['value'], 30)}]),
             'DecrementTemperatureRequest': lambda state, attributes, payload: (['climate'], ['set_temperature'], [{'temperature': max(state.attributes['temperature'] - payload['deltaValue']['value'], 16)}]),
             'SetModeRequest': lambda state, attributes, payload: (['climate'], ['set_hvac_mode'], [{'hvac_mode': payload['mode']['value'].lower().replace('fan','fan_only').replace('dehumidification','dry')}]),
-            'SetFanSpeedRequest': lambda state, attributes, payload: (['climate'], ['set_fan_mode'], [{'fan_mode': payload['fanSpeed']['level'].replace('middle','medium').replace('_','-').replace('quite','Quiet').replace('min','Quiet').replace('powerful','Turbo')}]), 
+            'SetFanSpeedRequest': lambda state, attributes, payload: (['climate'], ['set_fan_mode'], [{'fan_mode': payload['fanSpeed']['level'].replace('middle','medium').replace('_','-').replace('quite','Quiet').replace('min','Quiet').replace('powerful','Turbo')}]),
         },
         'media_player': {
             'TurnOnRequest':  'turn_on',
             'TurnOffRequest': 'turn_off',
             'TimingTurnOnRequest': 'turn_on',
-            'TimingTurnOffRequest': 'turn_off', 
+            'TimingTurnOffRequest': 'turn_off',
             'PauseRequest': 'media_pause',
             'ContinueRequest': 'media_play',
             'IncrementTVChannelRequest': lambda state, attributes, payload: (['wukongtv'], ['tv_up']),
@@ -226,14 +227,14 @@ class PlatformParameter:
             'TurnOnRequest':  'turn_on',
             'TurnOffRequest': 'turn_off',
             'TimingTurnOnRequest': 'turn_on',
-            'TimingTurnOffRequest': 'turn_off', 
+            'TimingTurnOffRequest': 'turn_off',
             'SetHumidityRequest': lambda state, attributes, payload: (['humidifier'], ['set_humidity'], [{'temperature': payload['deltValue']['value']}]),
         },
         'cover': {
             'TurnOnRequest':  'open_cover',
             'TurnOffRequest': 'close_cover',
             'TimingTurnOnRequest': 'open_cover',
-            'TimingTurnOffRequest': 'close_cover', 
+            'TimingTurnOffRequest': 'close_cover',
             'PauseRequest': 'stop_cover',
         },
         'vacuum': {
@@ -266,17 +267,18 @@ class PlatformParameter:
             'TurnOnRequest': lambda state, attributes, payload:([cmnd[0] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['turn_on']], [cmnd[1] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['turn_on']], [json.loads(cmnd[2]) for cmnd in attributes[ATTR_DEVICE_ACTIONS]['turn_on']]) if attributes.get(ATTR_DEVICE_ACTIONS) else (['input_boolean'], ['turn_on'], [{}]),
             'TurnOffRequest': lambda state, attributes, payload:([cmnd[0] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['turn_off']], [cmnd[1] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['turn_off']], [json.loads(cmnd[2]) for cmnd in attributes[ATTR_DEVICE_ACTIONS]['turn_off']]) if attributes.get(ATTR_DEVICE_ACTIONS) else (['input_boolean'], ['turn_off'], [{}]),
             'IncrementBrightnessPercentageRequest': lambda state, attributes, payload:([cmnd[0] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['increase_brightness']], [cmnd[1] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['increase_brightness']], [json.loads(cmnd[2]) for cmnd in attributes[ATTR_DEVICE_ACTIONS]['increase_brightness']]) if attributes.get(ATTR_DEVICE_ACTIONS) else (['input_boolean'], ['turn_on'], [{}]),
-            'DecrementBrightnessPercentageRequest': lambda state, attributes, payload:([cmnd[0] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_brightness']], [cmnd[1] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_brightness']], [json.loads(cmnd[2]) for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_brightness']]) if attributes.get(ATTR_DEVICE_ACTIONS) else (['input_boolean'], ['turn_on'], [{}]),                 
+            'DecrementBrightnessPercentageRequest': lambda state, attributes, payload:([cmnd[0] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_brightness']], [cmnd[1] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_brightness']], [json.loads(cmnd[2]) for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_brightness']]) if attributes.get(ATTR_DEVICE_ACTIONS) else (['input_boolean'], ['turn_on'], [{}]),
             'TimingTurnOnRequest': lambda state, attributes, payload: (['common_timer'], ['set'], [{'operation': 'custom:havcs_actions/timing_turn_on', 'duration': int(payload['timestamp']['value']) - int(time.time())}]),
             'TimingTurnOffRequest': lambda state, attributes, payload: (['common_timer'], ['set'], [{'operation': 'custom:havcs_actions/timing_turn_off', 'duration': int(payload['timestamp']['value']) - int(time.time())}]),
             'IncrementColorTemperatureRequest': lambda state, attributes, payload:([cmnd[0] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['increment_colortemperature']], [cmnd[1] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['increment_colortemperature']], [json.loads(cmnd[2]) for cmnd in attributes[ATTR_DEVICE_ACTIONS]['increment_colortemperature']]) if attributes.get(ATTR_DEVICE_ACTIONS) else (['input_boolean'], ['turn_on'], [{}]),
-            'DecrementColorTemperatureRequest': lambda state, attributes, payload:([cmnd[0] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_colortemperature']], [cmnd[1] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_colortemperature']], [json.loads(cmnd[2]) for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_colortemperature']]) if attributes.get(ATTR_DEVICE_ACTIONS) else (['input_boolean'], ['turn_on'], [{}]),                 
+            'DecrementColorTemperatureRequest': lambda state, attributes, payload:([cmnd[0] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_colortemperature']], [cmnd[1] for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_colortemperature']], [json.loads(cmnd[2]) for cmnd in attributes[ATTR_DEVICE_ACTIONS]['decrease_colortemperature']]) if attributes.get(ATTR_DEVICE_ACTIONS) else (['input_boolean'], ['turn_on'], [{}]),
         }
 
     }
     # action:[{Platfrom Attr: HA Attr},{}]
     _query_map_p2h = {
-        'GetTemperatureReadingRequest':{'temperatureReading':{'value':'%temperature','scale': 'CELSIUS'}},
+        'TemperatureReading': {'temperatureReading': {'value': '%temperature', 'scale': 'CELSIUS'}},
+        'Humidity': {'humidity': {'value': '%humidity', 'scale': '%'}},
     }
 
 
@@ -294,7 +296,7 @@ class VoiceControlDueros(PlatformParameter, VoiceControlProcessor):
             'INVALIDATE_PARAMS': 'ValueOutOfRangeError',
             'DEVICE_IS_NOT_EXIST': 'DriverInternalError',
             'IOT_DEVICE_OFFLINE': 'TargetOfflineError',
-            'ACCESS_TOKEN_INVALIDATE': 'InvalidAccessTokenError'            
+            'ACCESS_TOKEN_INVALIDATE': 'InvalidAccessTokenError'
         }
         messages = {
             'INVALIDATE_CONTROL_ORDER': 'invalidate control order',
@@ -311,15 +313,18 @@ class VoiceControlDueros(PlatformParameter, VoiceControlProcessor):
         if isinstance(value, (int, float)):
             return value
         if value is None:
-            return None
+            return 0
         if isinstance(value, str):
-            candidate = value.strip().replace('℃', '').replace('°C', '').replace('%', '')
+            candidate = value.strip().lower()
+            if candidate in {"unknown", "unavailable", "none", ""}:
+                return 0
+            candidate = candidate.replace('℃', '').replace('°c', '').replace('%', '')
             try:
                 if '.' in candidate:
                     return float(candidate)
                 return int(candidate)
             except ValueError:
-                return value
+                return 0
         return value
 
     def _query_action_from_property(self, device_property):
@@ -362,11 +367,12 @@ class VoiceControlDueros(PlatformParameter, VoiceControlProcessor):
             elif namespace == 'DuerOS.ConnectedHome.Query':
                 err_result, properties = self.process_query_command(data)
                 result = err_result if err_result else properties
-                action = action.replace('Request', 'Response') # fix 涓诲姩涓婃姤浼氭敹鍒癛eportStateRequest action锛屽彲浠ヨ繑鍥炶澶囩殑鍏朵粬灞炴€т俊鎭笉瓒呰繃10涓?            else:
+                action = action.replace('Request', 'Response')
+            else:
                 result = self._errorResult('SERVICE_ERROR')
         else:
             result = self._errorResult('ACCESS_TOKEN_INVALIDATE')
-        
+
         # Check error
         header['name'] = action
         if 'errorCode' in result:
@@ -375,7 +381,7 @@ class VoiceControlDueros(PlatformParameter, VoiceControlProcessor):
 
         response = {'header': header, 'payload': result}
 
-        _LOGGER.info("[%s] Respnose: %s", LOGGER_NAME, response)
+        _LOGGER.info("[%s] Response: %s", LOGGER_NAME, response)
         return response
 
     def _prase_command(self, command, arg):
@@ -449,16 +455,27 @@ class VoiceControlDueros(PlatformParameter, VoiceControlProcessor):
                 else:
                     _LOGGER.warning("[%s] %s has unsport attribute %s", LOGGER_NAME, device_property.get('entity_id'), name)
                     continue
+                if name in {'temperatureReading', 'targetTemperature', 'humidity', 'PM25', 'PM10', 'ppm', 'AQI', 'hcho'} and isinstance(value, str):
+                    if value.lower() in {'unavailable', 'unknown', 'none'}:
+                        value = 0
                 properties += [{'name': name, 'value': value, 'scale': scale, 'timestampOfSample': int(time.time()), 'uncertaintyInMilliseconds': 1000, 'legalValue': legalValue }]
         _LOGGER.debug(properties)
         _LOGGER.debug("properties list")
-        return properties if properties else [{'name': 'turnOnState', 'value': 'OFF', 'scale': '', 'timestampOfSample': int(time.time()), 'uncertaintyInMilliseconds': 1000, 'legalValue': '(ON, OFF)' }]        
+        return properties if properties else [{'name': 'turnOnState', 'value': 'OFF', 'scale': '', 'timestampOfSample': int(time.time()), 'uncertaintyInMilliseconds': 1000, 'legalValue': '(ON, OFF)' }]
     def _discovery_process_actions(self, device_properties, raw_actions):
         actions = []
+        has_sensor = False
         for device_property in device_properties:
+            if str(device_property.get('entity_id', '')).startswith('sensor.'):
+                has_sensor = True
             action = self._query_action_from_property(device_property)
             if action:
                 actions += [action,]
+        # DuerOS app commonly uses getState to render sensor value cards.
+        if has_sensor:
+            state_action = self.device_action_map_h2p.get('query_state')
+            if state_action:
+                actions += [state_action,]
         for raw_action in raw_actions:
             action = self.device_action_map_h2p.get(raw_action)
             if action:
@@ -466,7 +483,12 @@ class VoiceControlDueros(PlatformParameter, VoiceControlProcessor):
         return list(set(actions))
     def _discovery_process_device_type(self, raw_device_type):
         # raw_device_type guess from device_id's domain transfer to platform style
-        return raw_device_type if raw_device_type in self._device_type_alias else self.device_type_map_h2p.get(raw_device_type)
+        if raw_device_type in self._device_type_alias:
+            return raw_device_type
+        # raw_device_type may already be a platform enum (e.g. SENSOR)
+        if isinstance(raw_device_type, str) and raw_device_type.isupper():
+            return raw_device_type
+        return self.device_type_map_h2p.get(raw_device_type)
 
     def _discovery_process_device_info(self, device_id,  device_type, device_name, zone, properties, actions):
         return {
@@ -485,20 +507,76 @@ class VoiceControlDueros(PlatformParameter, VoiceControlProcessor):
 
 
     def _control_process_propertites(self, device_properties, action) -> None:
-        
+
         return self._discovery_process_propertites(device_properties)
 
     def _query_process_propertites(self, device_properties, action) -> None:
         properties = {}
         queryresponseattributes = ["humidity", "turnonstate", "state", "location"]
         action = action.replace('Request', '').replace('Get', '')
+        # Keep sensors online in DuerOS app by providing a virtual turnOnState.
+        if action == "TurnOnState" and any(str(dp.get('entity_id', '')).startswith('sensor.') for dp in device_properties):
+            return {"turnOnState": "ON"}
+        if action == "State":
+            attrs = []
+            state_payload = {}
+            for device_property in device_properties:
+                entity_id = str(device_property.get('entity_id', ''))
+                attr = str(device_property.get('attribute', ''))
+                state = self._hass.states.get(entity_id)
+                if not state:
+                    continue
+
+                name = self.device_attribute_map_h2p.get(attr)
+                if not name:
+                    continue
+
+                value = state.attributes.get(attr, state.state)
+                if entity_id.startswith('climate.') and attr == "temperature":
+                    value = state.attributes.get("current_temperature", state.state)
+                if entity_id.startswith('humidifier.') and attr == "humidity":
+                    value = state.attributes.get("current_humidity", state.state)
+                if entity_id.startswith('humidifier.') and attr == "targethumidity":
+                    value = state.attributes.get("humidity", state.state)
+                if entity_id.startswith('sensor.') and attr == "turnonstate":
+                    value = "ON"
+
+                name = name.replace("targetTemperature", "targetTemperature")
+                if name in {"temperatureReading", "targetTemperature", "humidity", "PM25", "PM10", "ppm", "AQI", "hcho"}:
+                    value = self._to_number(value)
+
+                if name == "turnOnState":
+                    value = "ON" if str(value).lower() in {"on", "true"} else "OFF"
+                    scale = ""
+                elif name == "humidity":
+                    scale = "%"
+                elif name in {"temperatureReading", "targetTemperature"}:
+                    scale = "CELSIUS"
+                else:
+                    scale = ""
+
+                attrs.append({
+                    'name': name,
+                    'value': value,
+                    'scale': scale,
+                    'timestampOfSample': int(time.time()),
+                    'uncertaintyInMilliseconds': 1000
+                })
+                state_payload[name] = {"value": value, "scale": scale}
+            if attrs:
+                # Keep legacy `attributes` and also return flattened properties
+                # for clients that read values directly by property key.
+                state_payload["attributes"] = attrs
+                return state_payload
+            if any(str(dp.get('entity_id', '')).startswith('sensor.') for dp in device_properties):
+                return {"turnOnState": {"value": "ON", "scale": ""}}
         if action in self._query_map_p2h:
             for property_name, attr_template in self._query_map_p2h[action].items():
                 formattd_property = self.vcdm.format_property(self._hass, device_properties, attr_template)
                 if isinstance(formattd_property, dict) and 'value' in formattd_property:
                     formattd_property['value'] = self._to_number(formattd_property.get('value'))
                 properties.update({property_name: formattd_property})
-                _LOGGER.debug("properties=  %s : %s", property_name, formattd_property)
+                _LOGGER.debug("properties= %s : %s", property_name, formattd_property)
         else:
             for device_property in device_properties:
                 _LOGGER.debug("device_property")
@@ -569,4 +647,5 @@ class VoiceControlDueros(PlatformParameter, VoiceControlProcessor):
             }
             payload.append(report)
         return payload
+
 

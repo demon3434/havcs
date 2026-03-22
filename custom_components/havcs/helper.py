@@ -31,12 +31,12 @@ class VoiceControlProcessor:
 
     def _discovery_process_device_info(self, device_id, device_type, device_name, zone, properties, actions) -> None:
         raise NotImplementedError()
-  
+
     def _control_process_propertites(self, device_properties, action) -> None:
         raise NotImplementedError()
 
     def _query_process_propertites(self, device_properties, action) -> None:
-        raise NotImplementedError()  
+        raise NotImplementedError()
 
     def _prase_action_p2h(self, action) -> None:
         for k,v in self.vcdm.device_action_map_h2p.items():
@@ -54,7 +54,7 @@ class VoiceControlProcessor:
 
     def _prase_command(self, command, arg) -> None:
         raise NotImplementedError()
-    
+
     def _errorResult(self, errorCode, messsage=None) -> None:
         raise NotImplementedError()
 
@@ -115,7 +115,7 @@ class VoiceControlProcessor:
                         # _LOGGER.debug("[%s] %s : failed to call service", LOGGER_NAME, i)
                     _LOGGER.debug("[%s] %s : success to call service", LOGGER_NAME, i)
                     success_task.append({i: [domain_list[i], service_list[i], data_list[i]]})
-                        
+
                 changed_states = []
                 for state in self._hass.states.async_all():
                     if state.context is CONTEXT:
@@ -129,6 +129,21 @@ class VoiceControlProcessor:
                 domain_list = [domain]
                 data_list = [data]
                 service_list =['']
+                readonly_domains = {"sensor", "binary_sensor"}
+                readonly_control_actions = {"TurnOnRequest", "TurnOffRequest", "TimingTurnOnRequest", "TimingTurnOffRequest"}
+
+                # DuerOS may send on/off control to read-only sensors from app UI.
+                # Treat as no-op success to avoid returning offline.
+                if domain in readonly_domains and action in readonly_control_actions:
+                    _LOGGER.debug(
+                        "[%s] skip readonly control: domain=%s, entity_id=%s, action=%s",
+                        LOGGER_NAME,
+                        domain,
+                        entity_id,
+                        action,
+                    )
+                    success_task.append({entity_id: [domain, "noop", data]})
+                    continue
 
                 if action in self._service_map_p2h.get(domain, []) :
                     translation = self._service_map_p2h[domain][action]
@@ -161,7 +176,7 @@ class VoiceControlProcessor:
                             # _LOGGER.debug("[%s] %s @task_%s: failed to call service", LOGGER_NAME, entity_id, i)
                         _LOGGER.debug("[%s] %s @task_%s: success to call service, new state = %s", LOGGER_NAME, entity_id, i, self._hass.states.get(entity_id))
                         success_task.append({entity_id: [domain_list[i], service_list[i], data_list[i]]})
-                        
+
                     changed_states = []
                     for state in self._hass.states.async_all():
                         if state.context is CONTEXT:
@@ -228,7 +243,7 @@ class VoiceControlDeviceManager:
     def get(self, device_id: str, hass: HomeAssistant = None, raw_attributes: dict = None) -> dict:
         if raw_attributes is None:
             return self._devices_cache.get(device_id)
-       
+
         device_name = raw_attributes.get(ATTR_DEVICE_NAME)
         device_type = None
         zone = None
@@ -242,12 +257,12 @@ class VoiceControlDeviceManager:
             device_name = self.get_device_name(hass, entity_id, raw_attributes, self._places, self._device_name_constraints) if device_name is None else device_name
             device_type = self.get_device_type(hass, entity_id, raw_attributes, device_name) if device_type is None else device_type
             zone = self.get_device_zone(hass, entity_id, raw_attributes, self._places, self._zone_constraints) if zone is None else zone
-            properties += self.get_device_properties(hass, entity_id, raw_attributes)         
+            properties += self.get_device_properties(hass, entity_id, raw_attributes)
             actions += self.get_device_actions(hass, entity_id, raw_attributes, device_type)
 
-        actions = list(set(actions))            
+        actions = list(set(actions))
         # properties = list(set(properties))
-            
+
         attributes = {
             ATTR_DEVICE_ID: device_id,
             ATTR_DEVICE_ENTITY_ID: entity_ids,
@@ -345,7 +360,7 @@ class VoiceControlDeviceManager:
                     if alias in device_name:
                         probably_device_names += [alias]
             return max(probably_device_names) if probably_device_names else None
-            
+
         return device_name
 
     def get_device_zone(self, hass, entity_id, raw_attributes, places = [], zone_constraints = []) ->str:
@@ -365,7 +380,7 @@ class VoiceControlDeviceManager:
                         zone = place
                         break
         if zone == 'unassigned':
-            # Guess from HomeAssistant group which contains entity 
+            # Guess from HomeAssistant group which contains entity
             for state in hass.states.async_all():
                 group_entity_id = state.entity_id
                 if group_entity_id.startswith('group.') and not group_entity_id.startswith('group.all_') and group_entity_id != 'group.default_view':
@@ -386,14 +401,33 @@ class VoiceControlDeviceManager:
             if validated_property:
                 properties += validated_property
         elif entity_id.startswith('sensor.'):
+            entity_id_l = entity_id.lower()
+            def _infer_sensor_attr_from_name():
+                if 'temperature' in entity_id_l or 'temp' in entity_id_l:
+                    return 'temperature'
+                if 'humidity' in entity_id_l:
+                    return 'humidity'
+                if 'illuminance' in entity_id_l or 'illumination' in entity_id_l:
+                    return 'illumination'
+                if 'pm25' in entity_id_l:
+                    return 'pm25'
+                if 'pm10' in entity_id_l:
+                    return 'pm10'
+                if 'co2' in entity_id_l:
+                    return 'co2'
+                if 'hcho' in entity_id_l:
+                    return 'hcho'
+                return None
             state = hass.states.get(entity_id)
             if state is None:
                 _LOGGER.debug("[%s] can not find sensor %s", LOGGER_NAME, entity_id)
+                attribute = _infer_sensor_attr_from_name()
+                if attribute and (not attributes_constrains or attribute in attributes_constrains):
+                    return [{'entity_id': entity_id, 'attribute': attribute}]
                 return []
             unit = str(state.attributes.get('unit_of_measurement', '')).strip().lower().replace(' ', '')
             friendly_name = str(state.attributes.get('friendly_name', '')).lower()
             device_class = str(state.attributes.get('device_class', '')).lower()
-            entity_id_l = entity_id.lower()
             if (
                 device_class == 'temperature'
                 or unit in {'掳c', '鈩?', '°c', '℃', '°f', '℉'}
@@ -427,7 +461,7 @@ class VoiceControlDeviceManager:
             elif 'hcho' in entity_id_l or 'hcho' in friendly_name or '鐢查啗' in friendly_name:
                 attribute = 'hcho'
             else:
-                attribute = None
+                attribute = _infer_sensor_attr_from_name()
                 _LOGGER.debug("[%s] unsupport sensor %s", LOGGER_NAME, entity_id)
             if not attributes_constrains or attribute in attributes_constrains:
                 properties = [{'entity_id': entity_id, 'attribute': attribute}]
@@ -441,7 +475,7 @@ class VoiceControlDeviceManager:
             properties = [{'entity_id': entity_id, 'attribute': 'turnonstate'}, {'entity_id': entity_id, 'attribute': 'state'}]
         else:
             properties = [{'entity_id': entity_id, 'attribute': 'turnonstate'}]
-        return properties    
+        return properties
     def get_property_related_entity_id(self, attribute, properties):
         for device_property in properties:
             if attribute == device_property.get('attribute'):
@@ -454,7 +488,15 @@ class VoiceControlDeviceManager:
                 attribute = formatted_property[key][1:]
                 entity_id = self.get_property_related_entity_id(attribute, device_properties)
                 state = hass.states.get(entity_id) if entity_id else None
-                formatted_property[key] = state.state if state else None
+                if not state:
+                    formatted_property[key] = None
+                    continue
+                # Prefer explicit attribute for entities exposing sensor values in attributes.
+                value = state.attributes.get(attribute, state.state)
+                if isinstance(value, str) and value.strip().lower() in {"unknown", "unavailable", "none", ""}:
+                    # Fallback to state to avoid returning unknown when only state has the value.
+                    value = state.state
+                formatted_property[key] = value
         return formatted_property
     def get_device_actions(self, hass, entity_id, raw_attributes, device_type) -> list:
         if ATTR_DEVICE_ACTIONS in raw_attributes and raw_attributes[ATTR_DEVICE_ACTIONS]:
@@ -464,6 +506,12 @@ class VoiceControlDeviceManager:
                 actions = [actions]
             elif isinstance(actions, dict):
                 actions = actions.keys()
+            actions = list(actions)
+            # For sensors, normalize query actions by inferred properties.
+            if device_type == 'sensor' or entity_id.startswith('sensor.'):
+                inferred_actions = self.get_sensor_actions_from_properties(self.get_device_properties(hass, entity_id, raw_attributes))
+                filtered_actions = [action for action in actions if not str(action).startswith('query_')]
+                actions = list(set(filtered_actions) | set(inferred_actions))
         elif device_type == 'switch':
             actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate"]
         elif device_type == 'light':
@@ -481,7 +529,7 @@ class VoiceControlDeviceManager:
         elif device_type == 'fan':
             actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate", "set_percentage", "increase_speed", "decrease_speed", "set_oscillate","unset_oscillate"]
         elif device_type == 'sensor':
-            actions = self.get_sensor_actions_from_properties(self.get_device_properties(hass, entity_id, raw_attributes))  
+            actions = self.get_sensor_actions_from_properties(self.get_device_properties(hass, entity_id, raw_attributes))
         elif entity_id.startswith('switch.'):
             actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate"]
         elif entity_id.startswith('light.'):
@@ -503,10 +551,10 @@ class VoiceControlDeviceManager:
         else:
             actions = ["turn_on", "turn_off", "timing_turn_on", "timing_turn_off", "query_turnonstate"]
         return actions
-    
+
     def get_sensor_actions_from_properties(self, properties) -> list:
         return [ 'query_' + device_property.get('attribute') for device_property in properties]
-    
+
 
 
 
